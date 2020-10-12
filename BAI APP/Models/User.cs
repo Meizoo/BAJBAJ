@@ -14,6 +14,6 @@ namespace BAI_APP.Models
         public DateTime? FailedLoginDate { get; set; }
         public DateTime? LoginDate { get; set; }
         public Role Role { get; set; }
-        public ICollection<MessageUser> Messages { get; set; }
+        public ICollection<MessageModerator> Messages { get; set; }
     }
 }

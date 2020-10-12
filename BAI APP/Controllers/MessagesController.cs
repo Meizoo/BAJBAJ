@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.EntityFrameworkCore;
 using BAI_APP.Context;
 using BAI_APP.Models;
+using BAI_APP.ViewModels;
+using BAI_APP.Helpers.Extensions;
 
 namespace BAI_APP.Controllers
 {
@@ -22,12 +24,12 @@ namespace BAI_APP.Controllers
         // GET: Messages
         public async Task<IActionResult> Index()
         {
-            var baiContext = _context.Messages.Include(m => m.Sender);
+            var baiContext = _context.Messages.AsQueryable().Include(m => m.Moderators).Include(x => x.Sender);
             return View(await baiContext.ToListAsync());
         }
 
         // GET: Messages/Details/5
-        public async Task<IActionResult> Details(int? id)
+        public async Task<IActionResult> Details(string id)
         {
             if (id == null)
             {
@@ -48,7 +50,9 @@ namespace BAI_APP.Controllers
         // GET: Messages/Create
         public IActionResult Create()
         {
-            ViewData["SenderId"] = new SelectList(_context.Users, "Id", "Id");
+            if (HttpContext.Session.GetObjectFromJson<User>("User") == null)
+                return RedirectToAction("Index");
+
             return View();
         }
 
@@ -57,33 +61,47 @@ namespace BAI_APP.Controllers
         // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("SenderId,Content,Id,CreationDate,ModifiedDate")] Message message)
+        public async Task<IActionResult> Create(MessageVM message)
         {
             if (ModelState.IsValid)
             {
-                _context.Add(message);
+                var mes = new Message()
+                {
+                    Content = message.Content,
+                    CreationDate = DateTime.Now,
+                    Id = Guid.NewGuid().ToString("N"),
+                    SenderId = message.SenderId
+                };
+                _context.Add(mes);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
             }
-            ViewData["SenderId"] = new SelectList(_context.Users, "Id", "Id", message.SenderId);
+
             return View(message);
         }
 
         // GET: Messages/Edit/5
-        public async Task<IActionResult> Edit(int? id)
+        public async Task<IActionResult> Edit(string id)
         {
             if (id == null)
             {
                 return NotFound();
             }
 
-            var message = await _context.Messages.FindAsync(id);
+            var message = await _context.Messages.Include(x => x.Moderators).FirstOrDefaultAsync(x => x.Id == id);
+            var messageVm = new MessageVM(message);
             if (message == null)
             {
                 return NotFound();
             }
-            ViewData["SenderId"] = new SelectList(_context.Users, "Id", "Id", message.SenderId);
-            return View(message);
+            var user = HttpContext.Session.GetObjectFromJson<User>("User");
+            var users = _context.Users.Where(x => x.Id != user.Id).Select(c => new
+            {
+                UserId = c.Id,
+                UserLogin = c.Login
+            }).ToList();
+            ViewData["Users"] = new MultiSelectList(users, "UserId", "UserLogin", messageVm.ModeratorsId);
+            return View(messageVm);
         }
 
         // POST: Messages/Edit/5
@@ -91,9 +109,9 @@ namespace BAI_APP.Controllers
         // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("SenderId,Content,Id,CreationDate,ModifiedDate")] Message message)
+        public async Task<IActionResult> Edit(string id, MessageVM messageVm)
         {
-            if (id != message.Id)
+            if (id != messageVm.Id)
             {
                 return NotFound();
             }
@@ -102,12 +120,30 @@ namespace BAI_APP.Controllers
             {
                 try
                 {
+                    var message = await _context.Messages
+                        .Include(x => x.Moderators)
+                        .FirstOrDefaultAsync(x => x.Id == id);
+
+                    var xd = messageVm.ModeratorsId?.Select(x => new MessageModerator()
+                    {
+                        Id = Guid.NewGuid().ToString("N"),
+                        MessageId = id,
+                        ModeratorId = x,
+                        CreationDate = DateTime.Now
+                    }).ToList() ?? new List<MessageModerator>();
+                    if (xd.Count != 0)
+                    {
+                        message.Moderators = xd;
+                    }
+
+                    message.Content = messageVm.Content;
+                    message.ModifiedDate = DateTime.Now;
                     _context.Update(message);
                     await _context.SaveChangesAsync();
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    if (!MessageExists(message.Id))
+                    if (!MessageExists(messageVm.Id))
                     {
                         return NotFound();
                     }
@@ -118,12 +154,11 @@ namespace BAI_APP.Controllers
                 }
                 return RedirectToAction(nameof(Index));
             }
-            ViewData["SenderId"] = new SelectList(_context.Users, "Id", "Id", message.SenderId);
-            return View(message);
+            return View(messageVm);
         }
 
         // GET: Messages/Delete/5
-        public async Task<IActionResult> Delete(int? id)
+        public async Task<IActionResult> Delete(string id)
         {
             if (id == null)
             {
@@ -144,7 +179,7 @@ namespace BAI_APP.Controllers
         // POST: Messages/Delete/5
         [HttpPost, ActionName("Delete")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> DeleteConfirmed(int id)
+        public async Task<IActionResult> DeleteConfirmed(string id)
         {
             var message = await _context.Messages.FindAsync(id);
             _context.Messages.Remove(message);
@@ -152,7 +187,7 @@ namespace BAI_APP.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private bool MessageExists(int id)
+        private bool MessageExists(string id)
         {
             return _context.Messages.Any(e => e.Id == id);
         }

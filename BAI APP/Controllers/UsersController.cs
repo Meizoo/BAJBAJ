@@ -1,12 +1,13 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using BAI_APP.Context;
+using BAI_APP.Helpers.Extensions;
+using BAI_APP.Models;
+
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+using System;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Rendering;
-using Microsoft.EntityFrameworkCore;
-using BAI_APP.Context;
-using BAI_APP.Models;
 
 namespace BAI_APP.Controllers
 {
@@ -26,7 +27,7 @@ namespace BAI_APP.Controllers
         }
 
         // GET: Users/Details/5
-        public async Task<IActionResult> Details(int? id)
+        public async Task<IActionResult> Details(string id)
         {
             if (id == null)
             {
@@ -54,10 +55,13 @@ namespace BAI_APP.Controllers
         // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Create([Bind("FailedCount,Name,Surname,Age,Password,FailedLoginDate,LoginDate,Role,Id,CreationDate,ModifiedDate")] User user)
+        public async Task<IActionResult> Create([Bind("Name,Surname,Age,Password,Login")] User user)
         {
             if (ModelState.IsValid)
             {
+                user.Id = Guid.NewGuid().ToString("N");
+                user.CreationDate = DateTime.Now;
+                user.Role = Role.User;
                 _context.Add(user);
                 await _context.SaveChangesAsync();
                 return RedirectToAction(nameof(Index));
@@ -86,7 +90,7 @@ namespace BAI_APP.Controllers
         // more details, see http://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> Edit(int id, [Bind("FailedCount,Name,Surname,Age,Password,FailedLoginDate,LoginDate,Role,Id,CreationDate,ModifiedDate")] User user)
+        public async Task<IActionResult> Edit(string id, [Bind("FailedCount,Name,Surname,Age,Password,FailedLoginDate,LoginDate,Role,Id,CreationDate,ModifiedDate")] User user)
         {
             if (id != user.Id)
             {
@@ -117,7 +121,7 @@ namespace BAI_APP.Controllers
         }
 
         // GET: Users/Delete/5
-        public async Task<IActionResult> Delete(int? id)
+        public async Task<IActionResult> Delete(string id)
         {
             if (id == null)
             {
@@ -145,7 +149,38 @@ namespace BAI_APP.Controllers
             return RedirectToAction(nameof(Index));
         }
 
-        private bool UserExists(int id)
+        [HttpGet, ActionName("Login")]
+        public IActionResult Login()
+        {
+            return View();
+        }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public ActionResult Login(User objUser)
+        {
+            if (ModelState.IsValid)
+            {
+
+                var obj = _context.Users.FirstOrDefault(a => a.Login.Equals(objUser.Login) && a.Password.Equals(objUser.Password));
+                if (obj != null)
+                {
+                    HttpContext.Session.SetObjectAsJson("User", obj);
+                    return RedirectToAction("Index");
+                }
+
+            }
+            return View(objUser);
+        }
+
+        [HttpGet, ActionName("Logout")]
+        public IActionResult Logout()
+        {
+            HttpContext.Session.Remove("User");
+            return RedirectToAction("Login");
+        }
+
+        private bool UserExists(string id)
         {
             return _context.Users.Any(e => e.Id == id);
         }
